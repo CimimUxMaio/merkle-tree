@@ -13,10 +13,6 @@ fn hash_pair<H: Hash>(first: H, second: H) -> u64 {
     hasher.finish()
 }
 
-fn closest_power_of_2(number: usize) -> usize {
-    (number as f32).log2().ceil().exp2() as usize
-}
-
 fn ancestor_index(index: usize, level: usize) -> usize {
     index / (2_usize.pow(level as u32)) // Integer division.
 }
@@ -27,47 +23,60 @@ fn sibling_index(index: usize) -> usize {
 
 pub struct MerkleTree {
     pub levels: Vec<Vec<u64>>,
-    pub padding: usize,
+    capacity: usize,
+    padding: usize,
 }
 
 pub struct MerkleProof {
-    pub index: usize,
-    pub nodes: Vec<u64>,
-    pub root: u64,
+    index: usize,
+    nodes: Vec<u64>,
+    root: u64,
+}
+
+fn generate_levels(leafs: &Vec<u64>, levels: &mut Vec<Vec<u64>>) {
+    let mut current: Vec<u64> = leafs.to_owned();
+    levels.push(current.clone());
+
+    while current.len() > 1 {
+        let current_len = current.len();
+        let mut next_level = Vec::new();
+        for index in (0..current_len).step_by(2) {
+            let hash = hash_pair(current[index], current[index + 1]);
+            next_level.push(hash);
+        }
+        current = next_level;
+        levels.push(current.clone());
+    }
 }
 
 impl MerkleTree {
-    pub fn build<T: Hash + Clone>(elements: Vec<T>) -> MerkleTree {
+    fn pad() -> u64 {
+        0
+    }
+
+    pub fn build<T: Hash>(elements: Vec<T>) -> MerkleTree {
         if elements.is_empty() {
             panic!("Can not build a Merkle Tree with empty data");
         }
 
-        let tree_width = closest_power_of_2(elements.len());
-        let padding_len = tree_width - elements.len();
-        let last = elements.last().expect("Empty data is not allowed").clone();
-        let padding = vec![last; padding_len];
-        let padded_elements: Vec<T> = elements.into_iter().chain(padding).collect();
-
-        let mut levels = Vec::new();
+        let capacity = elements.len().next_power_of_two();
+        let padding = capacity - elements.len();
+        let padding_vec = vec![MerkleTree::pad(); padding];
 
         // Level 0 hashes
-        let mut current: Vec<u64> = padded_elements.iter().map(hash_single).collect();
-        levels.push(current.clone());
+        let leafs = elements
+            .iter()
+            .map(hash_single)
+            .chain(padding_vec)
+            .collect();
 
-        while current.len() > 1 {
-            let current_len = current.len();
-            let mut next_level = Vec::new();
-            for index in (0..current_len).step_by(2) {
-                let hash = hash_pair(current[index], current[index + 1]);
-                next_level.push(hash);
-            }
-            current = next_level;
-            levels.push(current.clone());
-        }
+        let mut levels = Vec::new();
+        generate_levels(&leafs, &mut levels);
 
         MerkleTree {
             levels,
-            padding: padding_len,
+            capacity,
+            padding,
         }
     }
 
@@ -93,6 +102,76 @@ impl MerkleTree {
 
     pub fn root(&self) -> u64 {
         self.levels[self.height() - 1][0]
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
+
+    pub fn len(&self) -> usize {
+        match self.levels.first() {
+            Option::None => 0_usize,
+            Option::Some(level) => level.len() - self.padding,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    fn is_full(&self) -> bool {
+        self.padding == 0
+    }
+
+    fn duplicate_capacity(&mut self) {
+        // Generate new nodes.
+        // let mut levels = [vec![MerkleTree::pad(); self.capacity]];
+        let new_leafs = vec![MerkleTree::pad(); self.capacity];
+        let mut new_levels = Vec::new();
+        generate_levels(&new_leafs, &mut new_levels);
+
+        // Append new nodes to each level of the tree.
+        for (level_n, level) in new_levels.iter_mut().enumerate() {
+            self.levels[level_n].append(level);
+        }
+
+        // Re-compute root node;
+        let last_level = &self.levels[self.height() - 1];
+        let new_root = hash_pair(last_level[0], last_level[1]);
+        self.levels.push(vec![new_root]);
+
+        // Update padding;
+        self.padding += self.capacity;
+
+        // Update capacity;
+        self.capacity *= 2;
+    }
+
+    pub fn push<H: Hash>(&mut self, value: H) {
+        if self.is_full() {
+            self.duplicate_capacity();
+        }
+
+        let mut index = self.len();
+        self.levels[0][index] = hash_single(value);
+
+        for level_n in 1..self.levels.len() {
+            let previous_level = &self.levels[level_n - 1];
+            let node = previous_level[index];
+            let sibling_node = previous_level[sibling_index(index)]; // Previous index's sibling.
+
+            let parent_index = ancestor_index(index, 1);
+
+            self.levels[level_n][parent_index] = if index % 2 == 0 {
+                hash_pair(node, sibling_node)
+            } else {
+                hash_pair(sibling_node, node)
+            };
+
+            index = parent_index;
+        }
+
+        self.padding -= 1;
     }
 }
 
@@ -191,5 +270,33 @@ mod tests {
 
         let tree = MerkleTree::build(vec![1, 2, 3, 4, 5]);
         assert!(!tree.get_proof(4).verify(4));
+    }
+
+    #[test]
+    fn push_value_with_capacity() {
+        let mut tree = MerkleTree::build(vec![1, 2, 3]);
+        assert!(!tree.get_proof(3).verify(4));
+        tree.push(4);
+        assert!(tree.get_proof(3).verify(4));
+
+        let mut tree = MerkleTree::build(vec![1; 6]);
+        assert!(!tree.get_proof(6).verify(2));
+        tree.push(2);
+        assert!(tree.get_proof(6).verify(2));
+        assert!(!tree.get_proof(7).verify(3));
+        tree.push(3);
+        assert!(tree.get_proof(7).verify(3));
+    }
+
+    #[test]
+    fn push_value_without_capacity() {
+        let mut tree = MerkleTree::build(vec![1, 2]);
+        tree.push(3);
+        tree.get_proof(2).verify(3);
+
+        let mut tree = MerkleTree::build(vec![1; 8]);
+        tree.push(2);
+        tree.push(3);
+        tree.get_proof(9).verify(3);
     }
 }
