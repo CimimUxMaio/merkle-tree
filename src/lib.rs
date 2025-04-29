@@ -1,11 +1,13 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
 
+/// Returns the hash of a single `Hash` value.
 fn hash_single<H: Hash>(value: H) -> u64 {
     let mut hasher = DefaultHasher::new();
     value.hash(&mut hasher);
     hasher.finish()
 }
 
+/// Returns the hash resulting of combining two `Hash` values.
 fn hash_pair<H: Hash>(first: H, second: H) -> u64 {
     let mut hasher = DefaultHasher::new();
     first.hash(&mut hasher);
@@ -13,14 +15,23 @@ fn hash_pair<H: Hash>(first: H, second: H) -> u64 {
     hasher.finish()
 }
 
+/// Returns a given index's nth ancestor's index under its respective level.
+/// * `index` - The child index.
+/// * `level` - The relative upwards level of the target ancestor.
 fn ancestor_index(index: usize, level: usize) -> usize {
     index / (2_usize.pow(level as u32)) // Integer division.
 }
 
+/// Returns the index of the sibling node of the given index.
+/// * `index` - The target index.
 fn sibling_index(index: usize) -> usize {
     if index % 2 == 0 { index + 1 } else { index - 1 }
 }
 
+/// Given the starting leafs, generates all the upper levels of the tree
+/// by computing the hashes of each pair iteratively.
+/// * `leafs` - Level 0, the starting leafs' hashes.
+/// * `levels` - Vector where the generated levels will be stored.
 fn generate_tree_levels(leafs: &Vec<u64>, levels: &mut Vec<Vec<u64>>) {
     let mut current: Vec<u64> = leafs.to_owned();
     levels.push(current.clone());
@@ -37,12 +48,14 @@ fn generate_tree_levels(leafs: &Vec<u64>, levels: &mut Vec<Vec<u64>>) {
     }
 }
 
+/// Base structure were merke tree data is stored.
 pub struct MerkleTree {
     levels: Vec<Vec<u64>>,
     capacity: usize,
     padding: usize,
 }
 
+/// Contains merkle proof information for later validation.
 pub enum MerkleProof {
     Proof {
         index: usize,
@@ -53,10 +66,13 @@ pub enum MerkleProof {
 }
 
 impl MerkleTree {
+    /// The default `Hash` value that is used as padding.
     fn pad() -> u64 {
         0
     }
 
+    /// Constructs a `MerkleTree` and populates it with the provided elements.
+    /// * `elements` - array of `Hash` elements used to populate the tree.
     pub fn build<H: Hash>(elements: &[H]) -> MerkleTree {
         let capacity = elements.len().next_power_of_two();
         let padding = capacity - elements.len();
@@ -79,10 +95,13 @@ impl MerkleTree {
         }
     }
 
+    /// Returns the height of the tree.
     pub fn height(&self) -> usize {
         self.levels.len()
     }
 
+    /// Creates a `MerkleProof` for a given index.
+    /// * `index` - index value to generate the proof for.
     pub fn get_proof(&self, index: usize) -> MerkleProof {
         let is_invalid_index = index >= self.len();
         if is_invalid_index || self.is_empty() {
@@ -104,6 +123,7 @@ impl MerkleTree {
         }
     }
 
+    /// Returns the root of the tree. If the tree is empty, the root will be `None`.
     pub fn root(&self) -> Option<u64> {
         if self.is_empty() {
             return None;
@@ -111,10 +131,15 @@ impl MerkleTree {
         self.levels.get(self.height() - 1)?.first().copied()
     }
 
+    /// Returns the capacity of the tree.
+    /// The capacity is the amount of space it has allocated.
     pub fn capacity(&self) -> usize {
         self.capacity
     }
 
+    /// Returns the length of the tree.
+    /// The length of the tree is the amount of elements it contains.
+    /// It may be different from the capacity.
     pub fn len(&self) -> usize {
         match self.levels.first() {
             Option::None => 0_usize,
@@ -122,14 +147,20 @@ impl MerkleTree {
         }
     }
 
+    /// Returns wether a tree has no elements or not.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
+    /// Returns wether a tree is at full capacity or not.
     pub fn is_full(&self) -> bool {
         self.padding == 0
     }
 
+    /// Duplicates the capacity of a given tree by generating a new
+    /// equally sized tree and merging it to the original. Re-computing
+    /// the needed hashes.
+    /// This makes the tree one point taller and creates a new root.
     fn duplicate_capacity(&mut self) {
         // Generate new nodes.
         let new_leafs = vec![MerkleTree::pad(); self.capacity];
@@ -153,6 +184,11 @@ impl MerkleTree {
         self.capacity *= 2;
     }
 
+    /// Pushes an `Hash` element into the tree.
+    /// Only the corresponding nodes will be updated.
+    /// If the tree does not have enough capacity, more space will be
+    /// allocated and its capacity will be doubled.
+    /// * `value` - The `Hash` value to be added to the tree.
     pub fn push<H: Hash>(&mut self, value: H) {
         if self.is_full() {
             self.duplicate_capacity();
@@ -182,6 +218,8 @@ impl MerkleTree {
 }
 
 impl MerkleProof {
+    /// Returns whether a given `Hash` value verifies the proof.
+    /// * `value` - The `Hash` value to be tested.
     pub fn verify<H: Hash>(&self, value: H) -> bool {
         match self {
             MerkleProof::Invalid => false,
