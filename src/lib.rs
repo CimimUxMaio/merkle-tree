@@ -54,7 +54,7 @@ impl MerkleTree {
         0
     }
 
-    pub fn build<T: Hash>(elements: Vec<T>) -> MerkleTree {
+    pub fn build<H: Hash>(elements: &[H]) -> MerkleTree {
         if elements.is_empty() {
             panic!("Can not build a Merkle Tree with empty data");
         }
@@ -125,7 +125,6 @@ impl MerkleTree {
 
     fn duplicate_capacity(&mut self) {
         // Generate new nodes.
-        // let mut levels = [vec![MerkleTree::pad(); self.capacity]];
         let new_leafs = vec![MerkleTree::pad(); self.capacity];
         let mut new_levels = Vec::new();
         generate_levels(&new_leafs, &mut new_levels);
@@ -199,22 +198,22 @@ mod tests {
 
     #[test]
     fn build_with_power_of_2_elements() {
-        MerkleTree::build(vec![1; 1]);
-        MerkleTree::build(vec![1; 4]);
-        MerkleTree::build(vec![1; 8]);
+        MerkleTree::build(&[1; 1]);
+        MerkleTree::build(&[1; 4]);
+        MerkleTree::build(&[1; 8]);
     }
 
     #[test]
     fn build_with_padded_trees() {
-        MerkleTree::build(vec![1; 3]);
-        MerkleTree::build(vec![1; 7]);
-        MerkleTree::build(vec![1; 13]);
+        MerkleTree::build(&[1; 3]);
+        MerkleTree::build(&[1; 7]);
+        MerkleTree::build(&[1; 13]);
     }
 
     #[test]
     #[should_panic]
-    fn build_with_empty_vector() {
-        MerkleTree::build::<u8>(Vec::new());
+    fn build_with_empty_array() {
+        MerkleTree::build::<u8>(&[]);
     }
 
     #[test]
@@ -222,14 +221,14 @@ mod tests {
         let mut tests = Vec::new();
 
         // Power of two inputs.
-        tests.push((MerkleTree::build(vec![1; 1]), 1));
-        tests.push((MerkleTree::build(vec![1; 4]), 3));
-        tests.push((MerkleTree::build(vec![1; 32]), 6));
+        tests.push((MerkleTree::build(&[1; 1]), 1));
+        tests.push((MerkleTree::build(&[1; 4]), 3));
+        tests.push((MerkleTree::build(&[1; 32]), 6));
 
         // Non power of two inputs.
-        tests.push((MerkleTree::build(vec![1; 3]), 3));
-        tests.push((MerkleTree::build(vec![1; 7]), 4));
-        tests.push((MerkleTree::build(vec![1; 13]), 5));
+        tests.push((MerkleTree::build(&[1; 3]), 3));
+        tests.push((MerkleTree::build(&[1; 7]), 4));
+        tests.push((MerkleTree::build(&[1; 13]), 5));
 
         for (tree, expected_height) in tests {
             assert_eq!(tree.height(), expected_height);
@@ -239,47 +238,47 @@ mod tests {
     #[test]
     fn get_proof_from_populated_tree() {
         // Should not fail
-        MerkleTree::build(vec![1; 1]).get_proof(0);
-        MerkleTree::build(vec![1; 4]).get_proof(3);
-        MerkleTree::build(vec![1; 8]).get_proof(4);
+        MerkleTree::build(&[1; 1]).get_proof(0);
+        MerkleTree::build(&[1; 4]).get_proof(3);
+        MerkleTree::build(&[1; 8]).get_proof(4);
 
-        MerkleTree::build(vec![1; 3]).get_proof(2);
-        MerkleTree::build(vec![1; 7]).get_proof(7);
-        MerkleTree::build(vec![1; 13]).get_proof(15);
+        MerkleTree::build(&[1; 3]).get_proof(2);
+        MerkleTree::build(&[1; 7]).get_proof(7);
+        MerkleTree::build(&[1; 13]).get_proof(15);
     }
 
     #[test]
     fn proof_verifies() {
-        let tree = MerkleTree::build(vec![1, 2, 3, 4]);
+        let tree = MerkleTree::build(&[1, 2, 3, 4]);
         assert!(tree.get_proof(2).verify(3));
 
-        let tree = MerkleTree::build(vec![1, 2]);
+        let tree = MerkleTree::build(&[1, 2]);
         assert!(tree.get_proof(1).verify(2));
 
-        let tree = MerkleTree::build(vec![1, 2, 3, 4, 5]);
+        let tree = MerkleTree::build(&[1, 2, 3, 4, 5]);
         assert!(tree.get_proof(4).verify(5));
     }
 
     #[test]
     fn proof_not_verifies() {
-        let tree = MerkleTree::build(vec![1, 2, 3, 4]);
+        let tree = MerkleTree::build(&[1, 2, 3, 4]);
         assert!(!tree.get_proof(3).verify(2));
 
-        let tree = MerkleTree::build(vec![1, 2]);
+        let tree = MerkleTree::build(&[1, 2]);
         assert!(!tree.get_proof(1).verify(1));
 
-        let tree = MerkleTree::build(vec![1, 2, 3, 4, 5]);
+        let tree = MerkleTree::build(&[1, 2, 3, 4, 5]);
         assert!(!tree.get_proof(4).verify(4));
     }
 
     #[test]
     fn push_value_with_capacity() {
-        let mut tree = MerkleTree::build(vec![1, 2, 3]);
+        let mut tree = MerkleTree::build(&[1, 2, 3]);
         assert!(!tree.get_proof(3).verify(4));
         tree.push(4);
         assert!(tree.get_proof(3).verify(4));
 
-        let mut tree = MerkleTree::build(vec![1; 6]);
+        let mut tree = MerkleTree::build(&[1; 6]);
         assert!(!tree.get_proof(6).verify(2));
         tree.push(2);
         assert!(tree.get_proof(6).verify(2));
@@ -290,11 +289,11 @@ mod tests {
 
     #[test]
     fn push_value_without_capacity() {
-        let mut tree = MerkleTree::build(vec![1, 2]);
+        let mut tree = MerkleTree::build(&[1, 2]);
         tree.push(3);
         tree.get_proof(2).verify(3);
 
-        let mut tree = MerkleTree::build(vec![1; 8]);
+        let mut tree = MerkleTree::build(&[1; 8]);
         tree.push(2);
         tree.push(3);
         tree.get_proof(9).verify(3);
