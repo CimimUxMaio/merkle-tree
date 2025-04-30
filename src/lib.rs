@@ -28,12 +28,12 @@ fn sibling_index(index: usize) -> usize {
     if index % 2 == 0 { index + 1 } else { index - 1 }
 }
 
-/// Given the starting leafs, generates all the upper levels of the tree
+/// Given the starting leaves, generates all the upper levels of the tree
 /// by computing the hashes of each pair iteratively.
-/// * `leafs` - Level 0, the starting leafs' hashes.
+/// * `leaves` - Level 0, the starting leaves' hashes.
 /// * `levels` - Vector where the generated levels will be stored.
-fn generate_tree_levels(leafs: &Vec<u64>, levels: &mut Vec<Vec<u64>>) {
-    let mut current: Vec<u64> = leafs.to_owned();
+fn generate_tree_levels(leaves: &Vec<u64>, levels: &mut Vec<Vec<u64>>) {
+    let mut current: Vec<u64> = leaves.to_owned();
     levels.push(current.clone());
 
     while current.len() > 1 {
@@ -79,14 +79,14 @@ impl MerkleTree {
         let padding_vec = vec![MerkleTree::pad(); padding];
 
         // Level 0 hashes
-        let leafs = elements
+        let leaves = elements
             .iter()
             .map(hash_single)
             .chain(padding_vec)
             .collect();
 
         let mut levels = Vec::new();
-        generate_tree_levels(&leafs, &mut levels);
+        generate_tree_levels(&leaves, &mut levels);
 
         MerkleTree {
             levels,
@@ -163,9 +163,9 @@ impl MerkleTree {
     /// This makes the tree one point taller and creates a new root.
     fn duplicate_capacity(&mut self) {
         // Generate new nodes.
-        let new_leafs = vec![MerkleTree::pad(); self.capacity];
+        let new_leaves = vec![MerkleTree::pad(); self.capacity];
         let mut new_levels = Vec::new();
-        generate_tree_levels(&new_leafs, &mut new_levels);
+        generate_tree_levels(&new_leaves, &mut new_levels);
 
         // Append new nodes to each level of the tree.
         for (level_n, level) in new_levels.iter_mut().enumerate() {
