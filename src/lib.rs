@@ -21,19 +21,7 @@ fn sibling_index(index: usize) -> usize {
     if index % 2 == 0 { index + 1 } else { index - 1 }
 }
 
-pub struct MerkleTree {
-    pub levels: Vec<Vec<u64>>,
-    capacity: usize,
-    padding: usize,
-}
-
-pub struct MerkleProof {
-    index: usize,
-    nodes: Vec<u64>,
-    root: u64,
-}
-
-fn generate_levels(leafs: &Vec<u64>, levels: &mut Vec<Vec<u64>>) {
+fn generate_tree_levels(leafs: &Vec<u64>, levels: &mut Vec<Vec<u64>>) {
     let mut current: Vec<u64> = leafs.to_owned();
     levels.push(current.clone());
 
@@ -49,16 +37,27 @@ fn generate_levels(leafs: &Vec<u64>, levels: &mut Vec<Vec<u64>>) {
     }
 }
 
+pub struct MerkleTree {
+    levels: Vec<Vec<u64>>,
+    capacity: usize,
+    padding: usize,
+}
+
+pub enum MerkleProof {
+    Proof {
+        index: usize,
+        nodes: Vec<u64>,
+        root: u64,
+    },
+    Invalid,
+}
+
 impl MerkleTree {
     fn pad() -> u64 {
         0
     }
 
     pub fn build<H: Hash>(elements: &[H]) -> MerkleTree {
-        if elements.is_empty() {
-            panic!("Can not build a Merkle Tree with empty data");
-        }
-
         let capacity = elements.len().next_power_of_two();
         let padding = capacity - elements.len();
         let padding_vec = vec![MerkleTree::pad(); padding];
@@ -71,7 +70,7 @@ impl MerkleTree {
             .collect();
 
         let mut levels = Vec::new();
-        generate_levels(&leafs, &mut levels);
+        generate_tree_levels(&leafs, &mut levels);
 
         MerkleTree {
             levels,
@@ -85,6 +84,11 @@ impl MerkleTree {
     }
 
     pub fn get_proof(&self, index: usize) -> MerkleProof {
+        let is_invalid_index = index >= self.len();
+        if is_invalid_index || self.is_empty() {
+            return MerkleProof::Invalid;
+        }
+
         let mut nodes: Vec<u64> = Vec::new();
 
         for level_n in 0..self.levels.len() - 1 {
@@ -93,15 +97,18 @@ impl MerkleTree {
             nodes.push(self.levels[level_n][proof_node_index]);
         }
 
-        MerkleProof {
+        MerkleProof::Proof {
             nodes,
             index,
-            root: self.root(),
+            root: self.root().expect("Non-empty trees always have a root"),
         }
     }
 
-    pub fn root(&self) -> u64 {
-        self.levels[self.height() - 1][0]
+    pub fn root(&self) -> Option<u64> {
+        if self.is_empty() {
+            return None;
+        }
+        self.levels.get(self.height() - 1)?.first().copied()
     }
 
     pub fn capacity(&self) -> usize {
@@ -119,7 +126,7 @@ impl MerkleTree {
         self.len() == 0
     }
 
-    fn is_full(&self) -> bool {
+    pub fn is_full(&self) -> bool {
         self.padding == 0
     }
 
@@ -127,7 +134,7 @@ impl MerkleTree {
         // Generate new nodes.
         let new_leafs = vec![MerkleTree::pad(); self.capacity];
         let mut new_levels = Vec::new();
-        generate_levels(&new_leafs, &mut new_levels);
+        generate_tree_levels(&new_leafs, &mut new_levels);
 
         // Append new nodes to each level of the tree.
         for (level_n, level) in new_levels.iter_mut().enumerate() {
@@ -176,19 +183,24 @@ impl MerkleTree {
 
 impl MerkleProof {
     pub fn verify<H: Hash>(&self, value: H) -> bool {
-        let mut computed_root = hash_single(value);
+        match self {
+            MerkleProof::Invalid => false,
+            MerkleProof::Proof { index, nodes, root } => {
+                let mut computed_root = hash_single(value);
 
-        for node_n in 0..self.nodes.len() {
-            let ancestor = ancestor_index(self.index, node_n);
+                for (node_n, &node) in nodes.iter().enumerate() {
+                    let ancestor = ancestor_index(*index, node_n);
 
-            computed_root = if ancestor % 2 == 0 {
-                hash_pair(computed_root, self.nodes[node_n])
-            } else {
-                hash_pair(self.nodes[node_n], computed_root)
-            };
+                    computed_root = if ancestor % 2 == 0 {
+                        hash_pair(computed_root, node)
+                    } else {
+                        hash_pair(node, computed_root)
+                    };
+                }
+
+                computed_root == *root
+            }
         }
-
-        computed_root == self.root
     }
 }
 
@@ -211,7 +223,6 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
     fn build_with_empty_array() {
         MerkleTree::build::<u8>(&[]);
     }
@@ -248,6 +259,11 @@ mod tests {
     }
 
     #[test]
+    fn get_proof_from_empty_tree() {
+        MerkleTree::build::<u8>(&[]).get_proof(10);
+    }
+
+    #[test]
     fn proof_verifies() {
         let tree = MerkleTree::build(&[1, 2, 3, 4]);
         assert!(tree.get_proof(2).verify(3));
@@ -269,6 +285,14 @@ mod tests {
 
         let tree = MerkleTree::build(&[1, 2, 3, 4, 5]);
         assert!(!tree.get_proof(4).verify(4));
+
+        // Should return false if the tree is empty.
+        let tree = MerkleTree::build::<u8>(&[]);
+        assert!(!tree.get_proof(10).verify(2));
+
+        // Should return false for an invalid index.
+        let tree = MerkleTree::build(&[1, 2, 3]);
+        assert!(!tree.get_proof(10).verify(2));
     }
 
     #[test]
