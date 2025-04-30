@@ -15,7 +15,7 @@ let proof: MerkleProof = tree.get_proof(1);
 let contains: bool = proof.verify(2); // Does the tree contain number 2?
 
 // It is possible to create an empty tree.
-let empty_tree = MerkleTree::build::<u8>(&[]);
+let mut empty_tree = MerkleTree::build::<u8>(&[]);
 
 // A Merkle Tree can be dynamic, this means that elements can be added once it is built.
 empty_tree.push(4);
