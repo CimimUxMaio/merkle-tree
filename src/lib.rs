@@ -70,6 +70,8 @@ pub enum MerkleProof {
         nodes: Vec<u64>,
         root: u64,
     },
+
+    /// Invalid proofs always return false for `proof.verify(value)`.
     Invalid,
 }
 
@@ -110,6 +112,9 @@ impl MerkleTree {
     }
 
     /// Creates a `MerkleProof` for a given index.
+    /// Attempting to create a proof for an invalid node (i.e. using an index which
+    /// does not correspond to a valid leaf) will return a `MerkleProof::Invalid`
+    /// value.
     /// * `index` - index value to generate the proof for.
     pub fn get_proof(&self, index: usize) -> MerkleProof {
         let is_invalid_index = index >= self.len();
@@ -171,7 +176,7 @@ impl MerkleTree {
     /// This involves creating a new root node where one of its children will
     /// be the current root node, and the other, will be the root node of a new
     /// subtree of the same height of the current, filled with padding values.
-    /// This operation also results in the tree encreasing its height by 1 level.
+    /// This operation also results in the tree increasing its height by 1 level.
     fn duplicate_capacity(&mut self) {
         // Generate new nodes.
         let new_leaves = vec![MerkleTree::PAD_HASH; self.capacity];
