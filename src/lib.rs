@@ -1,13 +1,15 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-/// Returns the hash of a single `Hash` value.
+/// Returns the hash of a single value. The value's type must implement
+/// the `Hash` trait.
 fn hash_single<H: Hash>(value: H) -> u64 {
     let mut hasher = DefaultHasher::new();
     value.hash(&mut hasher);
     hasher.finish()
 }
 
-/// Returns the hash resulting of combining two `Hash` values.
+/// Returns the hash resulting of combining two values.
+/// Both values must implement the `Hash` trait.
 fn hash_pair<H: Hash>(first: H, second: H) -> u64 {
     let mut hasher = DefaultHasher::new();
     first.hash(&mut hasher);
@@ -15,22 +17,28 @@ fn hash_pair<H: Hash>(first: H, second: H) -> u64 {
     hasher.finish()
 }
 
-/// Returns a given index's nth ancestor's index under its respective level.
+/// Given an node's index. Returns the index of the ancestor in the given level,
+/// relative to the child node's level.
+/// Each level of the tree can be thought as a vector of nodes, in this context, an index for
+/// a given level represents the index within this vector.
 /// * `index` - The child index.
 /// * `level` - The relative upwards level of the target ancestor.
 fn ancestor_index(index: usize, level: usize) -> usize {
     index / (2_usize.pow(level as u32)) // Integer division.
 }
 
-/// Returns the index of the sibling node of the given index.
-/// * `index` - The target index.
+/// Given a node's index. Returns the index of its sibling node.
+/// Each level of the tree can be thought as a vector of nodes, in this context, an index for
+/// a given level represents the index within this vector.
+/// The sibling node is the node on the same level that shares the same parent.
+/// * `index` - The target node's index.
 fn sibling_index(index: usize) -> usize {
     if index % 2 == 0 { index + 1 } else { index - 1 }
 }
 
-/// Given the starting leaves, generates all the upper levels of the tree
-/// by computing the hashes of each pair iteratively.
-/// * `leaves` - Level 0, the starting leaves' hashes.
+/// Given the leaves of a tree (the first level of the tree), generates all
+/// its upper levels (ancestors) by computing the hashes of each pair iteratively.
+/// * `leaves` - Level 0, the starting leaves.
 /// * `levels` - Vector where the generated levels will be stored.
 fn generate_tree_levels(leaves: &Vec<u64>, levels: &mut Vec<Vec<u64>>) {
     let mut current: Vec<u64> = leaves.to_owned();
@@ -48,7 +56,7 @@ fn generate_tree_levels(leaves: &Vec<u64>, levels: &mut Vec<Vec<u64>>) {
     }
 }
 
-/// Base structure were merke tree data is stored.
+/// Base structure were merkle tree data is stored.
 pub struct MerkleTree {
     levels: Vec<Vec<u64>>,
     capacity: usize,
@@ -67,16 +75,17 @@ pub enum MerkleProof {
 
 impl MerkleTree {
     /// The default `Hash` value that is used as padding.
-    fn pad() -> u64 {
-        0
-    }
+    const PAD_HASH: u64 = 0;
 
-    /// Constructs a `MerkleTree` and populates it with the provided elements.
+    /// Constructs a `MerkleTree` and populates it with the provided elements as leaf nodes.
+    /// Each leaf node is hashed and stored in the frist level of the tree. Then, each
+    /// pair of nodes is used to compute their parent by hashing both of its values (hashes) until reaching
+    /// the root node.
     /// * `elements` - array of `Hash` elements used to populate the tree.
     pub fn build<H: Hash>(elements: &[H]) -> MerkleTree {
         let capacity = elements.len().next_power_of_two();
         let padding = capacity - elements.len();
-        let padding_vec = vec![MerkleTree::pad(); padding];
+        let padding_vec = vec![MerkleTree::PAD_HASH; padding];
 
         // Level 0 hashes
         let leaves = elements
@@ -133,13 +142,14 @@ impl MerkleTree {
 
     /// Returns the capacity of the tree.
     /// The capacity is the amount of space it has allocated.
+    /// It may be different from the tree's length.
     pub fn capacity(&self) -> usize {
         self.capacity
     }
 
     /// Returns the length of the tree.
     /// The length of the tree is the amount of elements it contains.
-    /// It may be different from the capacity.
+    /// It may be different from the tree's capacity.
     pub fn len(&self) -> usize {
         match self.levels.first() {
             Option::None => 0_usize,
@@ -157,13 +167,14 @@ impl MerkleTree {
         self.padding == 0
     }
 
-    /// Duplicates the capacity of a given tree by generating a new
-    /// equally sized tree and merging it to the original. Re-computing
-    /// the needed hashes.
-    /// This makes the tree one point taller and creates a new root.
+    /// Duplicates the capacity of a given tree.
+    /// This involves creating a new root node where one of its children will
+    /// be the current root node, and the other, will be the root node of a new
+    /// subtree of the same height of the current, filled with padding values.
+    /// This operation also results in the tree encreasing its height by 1 level.
     fn duplicate_capacity(&mut self) {
         // Generate new nodes.
-        let new_leaves = vec![MerkleTree::pad(); self.capacity];
+        let new_leaves = vec![MerkleTree::PAD_HASH; self.capacity];
         let mut new_levels = Vec::new();
         generate_tree_levels(&new_leaves, &mut new_levels);
 
@@ -185,7 +196,7 @@ impl MerkleTree {
     }
 
     /// Pushes an `Hash` element into the tree.
-    /// Only the corresponding nodes will be updated.
+    /// This will only trigger the update of new node's ancestors.
     /// If the tree does not have enough capacity, more space will be
     /// allocated and its capacity will be doubled.
     /// * `value` - The `Hash` value to be added to the tree.
